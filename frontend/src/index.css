@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: #080812;
+  color: #eaeaea;
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #f0c040 0%, #ff6b81 50%, #f0c040 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.reel-strip {
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.1s linear;
+}
+
+.reel-symbol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  height: 100px;
+  width: 100px;
+}
+
+.win-line {
+  position: absolute;
+  height: 4px;
+  background: linear-gradient(90deg, #f0c040, #ff6b81, #f0c040);
+  border-radius: 2px;
+  z-index: 10;
+  animation: win-flash 0.5s ease-in-out infinite;
+}
+
+@keyframes win-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

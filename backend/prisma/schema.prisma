@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  username      String    @unique
+  passwordHash  String
+  fullName      String?
+  phone         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  wallet        Wallet?
+  transactions  Transaction[]
+  gameSessions  GameSession[]
+}
+
+model Wallet {
+  id              String    @id @default(uuid())
+  userId          String    @unique
+  balance         Int       @default(0)
+  currency        String    @default("CREDITS")
+  totalDeposited  Int       @default(0)
+  totalWon        Int       @default(0)
+  totalLost       Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions    Transaction[]
+}
+
+model Transaction {
+  id            String    @id @default(uuid())
+  userId        String
+  walletId      String
+  type          String
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  gameId        String?
+  spinId        String?
+  description   String?
+  createdAt     DateTime  @default(now())
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet        Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+}
+
+model Game {
+  id          String    @id @default(uuid())
+  slug        String    @unique
+  name        String
+  description String?
+  type        String
+  isActive    Boolean   @default(true)
+  config      Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  gameSessions GameSession[]
+}
+
+model GameSession {
+  id            String    @id @default(uuid())
+  userId        String
+  gameId        String
+  totalBet      Int       @default(0)
+  totalWin      Int       @default(0)
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game          Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  spins         Spin[]
+}
+
+model Spin {
+  id              String    @id @default(uuid())
+  sessionId       String
+  userId          String
+  gameId          String
+  bet             Int
+  win             Int       @default(0)
+  symbols         Json
+  winningLines    Json?
+  paytableVersion String
+  createdAt       DateTime  @default(now())
+
+  gameSession     GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
