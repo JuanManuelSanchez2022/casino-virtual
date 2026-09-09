@@ -6,13 +6,6 @@ async function request<T>(
 ): Promise<T> {
   const token = localStorage.getItem('token');
 
-  console.log(
-  'API REQUEST:',
-  endpoint,
-  'TOKEN:',
-  token ? 'PRESENTE' : 'AUSENTE'
-);
-
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };

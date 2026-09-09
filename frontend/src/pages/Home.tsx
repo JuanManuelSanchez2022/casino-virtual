@@ -1,4 +1,3 @@
-import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
 interface Game {
@@ -15,6 +14,7 @@ const GAMES: Game[] = [
   {
     id: 'slots',
     name: 'Tragamonedas',
+    icon: '🎰',
     image: '/assets/games/slots.png',
     description: 'Probá tu suerte con diferentes combinaciones.',
     available: true,
@@ -24,9 +24,9 @@ const GAMES: Game[] = [
     id: 'roulette',
     name: 'Ruleta',
     icon: '🎡',
-    image: '/assets/games/roulette.png',
-    description: 'Elegí tu apuesta y hacé girar la ruleta.',
-    available: false,
+    image: '/assets/games/background.png',
+    description: 'Ruleta europea 0-36. Apostá al número, color o combinaciones.',
+    available: true,
     route: '/roulette',
   },
   {
@@ -42,7 +42,7 @@ const GAMES: Game[] = [
     id: 'dice',
     name: 'Dados',
     icon: '🎲',
-    image: '/assets/games/dice.png',
+    image: '/assets/games/dice_one.png',
     description: 'Poné a prueba tu suerte con los dados.',
     available: true,
     route: '/dice',

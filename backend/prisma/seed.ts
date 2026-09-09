@@ -22,9 +22,9 @@ async function main() {
     create: {
       slug: 'roulette',
       name: 'Ruleta',
-      description: 'La ruleta clásica próximamente',
+      description: 'Ruleta europea clásica. Apostá al número, color o diferentes combinaciones.',
       type: 'roulette',
-      isActive: false,
+      isActive: true,
     },
   });
 
