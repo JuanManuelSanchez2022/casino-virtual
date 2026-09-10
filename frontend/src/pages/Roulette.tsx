@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { useRoulette, type RouletteBet } from '../hooks/useRoulette';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useRoulette, type RouletteBet, type RouletteBetType } from '../hooks/useRoulette';
 import { useWallet } from '../hooks/useWallet';
 
 const BET_OPTIONS = [1, 2, 5, 10, 20, 50, 100, 500];
@@ -9,12 +9,10 @@ const RED_NUMBERS = [
   19, 21, 23, 25, 27, 30, 32, 34, 36,
 ];
 
-const ROULETTE_NUMBERS = [
-  0, 32, 15, 19, 4, 21, 2, 25, 17, 34,
-  6, 27, 13, 36, 11, 30, 8, 23, 10, 5,
-  24, 16, 33, 1, 20, 14, 31, 9, 22, 18,
-  29, 7, 28, 12, 35, 3, 26,
-];
+const TABLE_NUMBERS: number[] = Array.from(
+  { length: 36 },
+  (_, i) => i + 1
+);
 
 const getNumberColor = (n: number): 'red' | 'black' | 'green' => {
   if (n === 0) return 'green';
@@ -27,7 +25,49 @@ const getColorLabel = (color: string) => {
   return 'VERDE';
 };
 
-const EVEN_BETS = [
+const getBetLabel = (bet: RouletteBet): string => {
+  if (bet.type === 'NUMBER') {
+    return `Número ${bet.value}`;
+  }
+  const labels: Record<string, string> = {
+    RED: 'ROJO',
+    BLACK: 'NEGRO',
+    EVEN: 'PAR',
+    ODD: 'IMPAR',
+    LOW: '1 - 18',
+    HIGH: '19 - 36',
+    DOZEN_1: '1ª DOCENA',
+    DOZEN_2: '2ª DOCENA',
+    DOZEN_3: '3ª DOCENA',
+    COLUMN_1: '1ª COLUMNA',
+    COLUMN_2: '2ª COLUMNA',
+    COLUMN_3: '3ª COLUMNA',
+  };
+  return labels[bet.type] || bet.type;
+};
+
+const isBetSelected = (
+  selectedBets: RouletteBet[],
+  type: RouletteBetType,
+  value?: number
+): boolean => {
+  return selectedBets.some(
+    (b) => b.type === type && (b.value ?? null) === (value ?? null)
+  );
+};
+
+const getBetAmount = (
+  selectedBets: RouletteBet[],
+  type: RouletteBetType,
+  value?: number
+): number | null => {
+  const bet = selectedBets.find(
+    (b) => b.type === type && (b.value ?? null) === (value ?? null)
+  );
+  return bet ? bet.amount : null;
+};
+
+const EVEN_BETS: { key: RouletteBetType; label: string; sub: string }[] = [
   { key: 'RED', label: 'ROJO', sub: 'x2' },
   { key: 'BLACK', label: 'NEGRO', sub: 'x2' },
   { key: 'EVEN', label: 'PAR', sub: 'x2' },
@@ -36,13 +76,13 @@ const EVEN_BETS = [
   { key: 'HIGH', label: '19 - 36', sub: 'x2' },
 ];
 
-const DOZEN_BETS = [
+const DOZEN_BETS: { key: RouletteBetType; label: string; sub: string; mult: string }[] = [
   { key: 'DOZEN_1', label: '1ª DOCENA', sub: '1 - 12', mult: 'x3' },
   { key: 'DOZEN_2', label: '2ª DOCENA', sub: '13 - 24', mult: 'x3' },
   { key: 'DOZEN_3', label: '3ª DOCENA', sub: '25 - 36', mult: 'x3' },
 ];
 
-const COLUMN_BETS = [
+const COLUMN_BETS: { key: RouletteBetType; label: string; mult: string }[] = [
   { key: 'COLUMN_1', label: '1ª COLUMNA', mult: 'x3' },
   { key: 'COLUMN_2', label: '2ª COLUMNA', mult: 'x3' },
   { key: 'COLUMN_3', label: '3ª COLUMNA', mult: 'x3' },
@@ -51,16 +91,52 @@ const COLUMN_BETS = [
 export default function Roulette() {
   const { playing, lastResult, play } = useRoulette();
   const { wallet, updateBalance } = useWallet();
-
-  const [bet, setBet] = useState(100);
-  const [selectedBet, setSelectedBet] =
-    useState<RouletteBet | null>(null);
+  const [stake, setStake] = useState(100);
+  const [selectedBets, setSelectedBets] = useState<RouletteBet[]>([]);
 
   const [error, setError] = useState('');
   const [animating, setAnimating] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [displayNumber, setDisplayNumber] = useState<number | null>(null);
   const [wheelRotation, setWheelRotation] = useState(0);
+
+  const totalBet = selectedBets.reduce(
+    (sum, b) => sum + b.amount,
+    0
+  );
+
+  const addBet = useCallback(
+    (type: RouletteBetType, value?: number) => {
+      const newBet: RouletteBet = { type, value, amount: stake };
+
+      setSelectedBets((prev) => {
+        for (let i = 0; i < prev.length; i++) {
+          const existing = prev[i];
+          if (
+            existing.type === type &&
+            (existing.value ?? null) === (value ?? null)
+          ) {
+            const updated = [...prev];
+            updated[i] = {
+              ...existing,
+              amount: existing.amount + stake,
+            };
+            return updated;
+          }
+        }
+        return [...prev, newBet];
+      });
+    },
+    [stake]
+  );
+
+  const removeBet = useCallback((index: number) => {
+    setSelectedBets((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const clearBets = useCallback(() => {
+    setSelectedBets([]);
+  }, []);
 
   const animationIntervalRef =
     useRef<ReturnType<typeof setInterval> | null>(null);
@@ -87,48 +163,29 @@ export default function Roulette() {
   const handleSelectNumber = (number: number) => {
     if (playing || animating) return;
 
-    setSelectedBet({
-      type: 'NUMBER',
-      value: number,
-      amount: bet,
-    });
-
+    addBet('NUMBER', number);
     setError('');
-    setShowResult(false);
   };
 
-  const handleSelectBetType = (type: string) => {
+  const handleSelectBetType = (type: RouletteBetType) => {
     if (playing || animating) return;
 
-    setSelectedBet({
-      type,
-      amount: bet,
-    });
-
+    addBet(type);
     setError('');
-    setShowResult(false);
   };
 
   const handleBetChange = (amount: number) => {
     if (playing || animating) return;
 
-    setBet(amount);
-
-    if (selectedBet) {
-      setSelectedBet({
-        ...selectedBet,
-        amount,
-      });
-    }
-
+    setStake(amount);
     setError('');
   };
 
   const handlePlay = async () => {
     if (playing || animating) return;
 
-    if (!selectedBet) {
-      setError('Elegí una apuesta.');
+    if (selectedBets.length === 0) {
+      setError('Elegí al menos una apuesta.');
       return;
     }
 
@@ -137,7 +194,7 @@ export default function Roulette() {
       return;
     }
 
-    if (wallet.balance < bet) {
+    if (wallet.balance < totalBet) {
       setError('Saldo insuficiente.');
       return;
     }
@@ -206,10 +263,7 @@ export default function Roulette() {
     }, frameDuration);
 
     try {
-      const result = await play({
-        ...selectedBet,
-        amount: bet,
-      });
+      const result = await play(selectedBets);
 
       const requestElapsed =
         Date.now() - animationStartRef.current;
@@ -259,12 +313,12 @@ export default function Roulette() {
     !playing &&
     !animating &&
     !!wallet &&
-    wallet.balance >= bet &&
-    !!selectedBet;
+    wallet.balance >= totalBet &&
+    selectedBets.length > 0;
 
   const isWin =
     lastResult !== null &&
-    lastResult.win > 0;
+    lastResult.totalWin > 0;
 
   const displayedColor =
     displayNumber !== null
@@ -516,7 +570,7 @@ export default function Roulette() {
                     transition-all
                     duration-150
                     ${
-                      bet === amount
+                      stake === amount
                         ? 'bg-casino-gold text-black border-casino-gold shadow-[0_0_14px_rgba(255,215,0,0.75)] scale-105'
                         : 'bg-black/80 text-gray-300 border-casino-border hover:border-casino-gold hover:text-casino-gold'
                     }
@@ -528,20 +582,86 @@ export default function Roulette() {
             </div>
           </div>
 
-          {/* Number board */}
-          <div className="bg-black/75 border border-casino-border rounded-2xl p-4 mb-5">
+          {/* Betting table */}
+          <div className="bg-black/75 border border-casino-border rounded-2xl p-4 mb-6">
             <div className="text-center text-gray-300 font-bold mb-3">
-              NÚMEROS
+              TABLERO DE APUESTAS
             </div>
 
-            <div className="grid grid-cols-6 md:grid-cols-12 gap-1">
-              {ROULETTE_NUMBERS.map(number => {
+            {/* Column headers */}
+            <div className="grid grid-cols-3 gap-1 mb-1">
+              {COLUMN_BETS.map(option => (
+                <button
+                  key={option.key}
+                  onClick={() =>
+                    handleSelectBetType(option.key)
+                  }
+                  disabled={playing || animating}
+                  className={`
+                    p-2
+                    rounded-lg
+                    border
+                    font-bold
+                    text-xs
+                    transition-all
+                    ${
+                      isBetSelected(selectedBets, option.key)
+                        ? 'border-casino-gold bg-casino-gold/15 shadow-[0_0_10px_rgba(255,215,0,0.6)] scale-[1.02]'
+                        : 'border-casino-border bg-casino-darker hover:border-casino-gold hover:text-casino-gold'
+                    }
+                  `}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Zero + Number grid */}
+            <div className="grid grid-cols-3 gap-1">
+              {/* Zero button — occupies first column */}
+              <button
+                onClick={() => handleSelectNumber(0)}
+                disabled={playing || animating}
+                className={`
+                  h-10
+                  md:h-11
+                  rounded-md
+                  font-black
+                  border-2
+                  transition-all
+                  relative
+                  ${
+                    isBetSelected(selectedBets, 'NUMBER', 0)
+                      ? 'ring-2 ring-casino-gold scale-105 shadow-[0_0_12px_rgba(255,215,0,0.8)]'
+                      : 'hover:scale-105 hover:border-casino-gold'
+                  }
+                  bg-green-700 border-green-500
+                `}
+              >
+                <div className="flex flex-col items-center">
+                  <span>0</span>
+                  {getBetAmount(selectedBets, 'NUMBER', 0) !== null && (
+                    <span className="text-xs text-casino-gold">
+                      $ {getBetAmount(selectedBets, 'NUMBER', 0)}
+                    </span>
+                  )}
+                </div>
+              </button>
+
+              {/* Numbers 1-36 in 12 rows × 3 columns */}
+              {TABLE_NUMBERS.map(number => {
                 const color =
                   getNumberColor(number);
 
                 const selected =
-                  selectedBet?.type === 'NUMBER' &&
-                  selectedBet.value === number;
+                  isBetSelected(
+                    selectedBets,
+                    'NUMBER',
+                    number
+                  );
+
+                const betAmount =
+                  getBetAmount(selectedBets, 'NUMBER', number);
 
                 return (
                   <button
@@ -557,12 +677,11 @@ export default function Roulette() {
                       font-black
                       border-2
                       transition-all
+                      relative
                       ${
                         color === 'red'
                           ? 'bg-red-700 border-red-500'
-                          : color === 'black'
-                          ? 'bg-gray-950 border-gray-700'
-                          : 'bg-green-700 border-green-500'
+                          : 'bg-gray-950 border-gray-700'
                       }
                       ${
                         selected
@@ -571,7 +690,14 @@ export default function Roulette() {
                       }
                     `}
                   >
-                    {number}
+                    <div className="flex flex-col items-center">
+                      <span>{number}</span>
+                      {betAmount !== null && (
+                        <span className="text-xs text-casino-gold">
+                          $ {betAmount}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 );
               })}
@@ -587,8 +713,10 @@ export default function Roulette() {
             <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
               {EVEN_BETS.map(option => {
                 const selected =
-                  selectedBet?.type ===
-                  option.key;
+                  isBetSelected(
+                    selectedBets,
+                    option.key
+                  );
 
                 return (
                   <button
@@ -644,8 +772,10 @@ export default function Roulette() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               {DOZEN_BETS.map(option => {
                 const selected =
-                  selectedBet?.type ===
-                  option.key;
+                  isBetSelected(
+                    selectedBets,
+                    option.key
+                  );
 
                 return (
                   <button
@@ -685,68 +815,133 @@ export default function Roulette() {
             </div>
           </div>
 
-          {/* Columns */}
-          <div className="bg-black/75 border border-casino-border rounded-2xl p-4 mb-6">
-            <div className="text-center text-gray-300 font-bold mb-3">
-              COLUMNAS
-            </div>
+          {/* Bets summary */}
+          {selectedBets.length > 0 && (
+            <div className="bg-black/75 border border-casino-border rounded-2xl p-4 mb-6">
+              <div className="text-center text-gray-300 font-bold mb-3">
+                MIS APUESTAS
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              {COLUMN_BETS.map(option => {
-                const selected =
-                  selectedBet?.type ===
-                  option.key;
+              <div className="space-y-2">
+                {selectedBets.map((bet, index) => {
+                  const existingIndex = selectedBets
+                    .slice(0, index)
+                    .findIndex(
+                      (b) =>
+                        b.type === bet.type &&
+                        (b.value ?? null) === (bet.value ?? null)
+                    );
 
-                return (
-                  <button
-                    key={option.key}
-                    onClick={() =>
-                      handleSelectBetType(
-                        option.key
-                      )
-                    }
-                    disabled={playing || animating}
-                    className={`
-                      p-3
-                      rounded-xl
-                      border-2
-                      transition-all
-                      ${
-                        selected
-                          ? 'border-casino-gold bg-casino-gold/15 shadow-[0_0_12px_rgba(255,215,0,0.6)]'
-                          : 'border-casino-border bg-casino-darker hover:border-casino-gold'
-                      }
-                    `}
-                  >
-                    <div className="font-black text-casino-gold">
-                      {option.label}
+                  return (
+                    <div
+                      key={index}
+                      className={`
+                        flex
+                        justify-between
+                        items-center
+                        p-2
+                        rounded-lg
+                        bg-casino-darker/50
+                        ${
+                          existingIndex !== -1
+                            ? 'hidden'
+                            : ''
+                        }
+                      `}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`
+                            font-bold
+                            ${
+                              bet.type === 'RED'
+                                ? 'text-red-500'
+                                : bet.type === 'BLACK'
+                                ? 'text-gray-200'
+                                : bet.type === 'NUMBER' &&
+                                  getNumberColor(bet.value ?? 0) === 'red'
+                                ? 'text-red-500'
+                                : bet.type === 'NUMBER' &&
+                                  getNumberColor(bet.value ?? 0) === 'green'
+                                ? 'text-green-500'
+                                : 'text-casino-gold'
+                            }
+                          `}
+                        >
+                          {getBetLabel(bet)}
+                        </span>
+
+                        <span className="text-gray-400">
+                          $ {bet.amount}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={() => removeBet(index)}
+                        disabled={playing || animating}
+                        className="
+                          text-red-400
+                          hover:text-red-300
+                          hover:bg-red-900/20
+                          rounded-full
+                          w-6
+                          h-6
+                          flex
+                          items-center
+                          justify-center
+                          text-sm
+                          font-bold
+                          transition-all
+                        "
+                      >
+                        ✕
+                      </button>
                     </div>
+                  );
+                })}
+              </div>
 
-                    <div className="text-xs text-gray-400 mt-1">
-                      {option.mult}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+              <div
+                className="
+                  flex
+                  justify-between
+                  items-center
+                  mt-3
+                  pt-3
+                  border-t
+                  border-casino-border
+                "
+              >
+                <span className="text-gray-400 font-bold">
+                  TOTAL
+                </span>
+                <span className="text-casino-gold font-black text-xl">
+                  $ {totalBet}
+                </span>
+              </div>
 
-          {/* Current bet */}
-          {selectedBet && (
-            <div className="text-center mb-4">
-              <span className="text-gray-400">
-                Apuesta seleccionada:{' '}
-              </span>
-
-              <span className="text-casino-gold font-bold">
-                {selectedBet.type === 'NUMBER'
-                  ? `Número ${selectedBet.value}`
-                  : selectedBet.type}
-              </span>
-
-              <span className="text-gray-400">
-                {' '}· {bet}
-              </span>
+              <div className="mt-3 flex justify-center">
+                <button
+                  onClick={clearBets}
+                  disabled={playing || animating}
+                  className="
+                    px-4
+                    py-1
+                    rounded-lg
+                    text-xs
+                    font-bold
+                    border
+                    border-red-800
+                    text-red-300
+                    bg-red-900/20
+                    hover:bg-red-900/40
+                    hover:border-red-600
+                    transition-all
+                  "
+                >
+                  LIMPIAR
+                </button>
+              </div>
             </div>
           )}
 
@@ -844,41 +1039,91 @@ export default function Roulette() {
                 )}
               </div>
 
+              {/* Individual bet results */}
+              <div className="bg-black/40 rounded-xl p-3 mb-4">
+                <div className="text-gray-400 text-xs font-bold mb-2">
+                  APUESTAS DE LA RONDA
+                </div>
+
+                <div className="space-y-2">
+                  {lastResult.bets.map((betResult, idx) => {
+                    const isBetWin = betResult.won;
+
+                    return (
+                      <div
+                        key={idx}
+                        className="flex justify-between items-center"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-gray-300 font-medium">
+                            {getBetLabel(betResult)}
+                          </span>
+                          <span className="text-gray-400 text-sm">
+                            $ {betResult.amount}
+                          </span>
+                        </div>
+
+                        <div
+                          className={`
+                            font-bold
+                            text-sm
+                            ${
+                              isBetWin
+                                ? 'text-green-400'
+                                : 'text-gray-500'
+                            }
+                          `}
+                        >
+                          {isBetWin
+                            ? `+$${betResult.win}`
+                            : 'PERDIÓ'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Summary grid */}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="bg-black/40 rounded-lg p-3">
                   <div className="text-gray-400">
-                    Apuesta
+                    Total Apostado
                   </div>
                   <div className="text-casino-gold font-bold text-lg">
-                    {lastResult.bet.amount}
+                    {lastResult.totalBet}
                   </div>
                 </div>
 
                 <div className="bg-black/40 rounded-lg p-3">
                   <div className="text-gray-400">
-                    Multiplicador
+                    Total Ganado
                   </div>
                   <div className="text-casino-gold font-bold text-lg">
-                    x{lastResult.multiplier}
+                    {lastResult.totalWin}
                   </div>
                 </div>
 
                 <div className="bg-black/40 rounded-lg p-3">
                   <div className="text-gray-400">
-                    Premio
+                    Resultado Neto
                   </div>
                   <div
                     className={`
                       font-bold
                       text-lg
                       ${
-                        isWin
+                        lastResult.netResult > 0
                           ? 'text-green-400'
+                          : lastResult.netResult < 0
+                          ? 'text-red-400'
                           : 'text-gray-300'
-                      }
+                    }
                     `}
                   >
-                    {lastResult.win}
+                    {lastResult.netResult > 0
+                      ? `+$${lastResult.netResult}`
+                      : `$${lastResult.netResult}`}
                   </div>
                 </div>
 

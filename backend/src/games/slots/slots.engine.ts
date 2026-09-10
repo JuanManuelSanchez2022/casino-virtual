@@ -1,11 +1,13 @@
-export class SlotsEngine {
-  private config: any;
+import { SlotConfig, SlotSymbol } from './slots.types';
 
-  constructor(config: any) {
+export class SlotsEngine {
+  private config: SlotConfig;
+
+  constructor(config: SlotConfig) {
     this.config = config;
   }
 
-  private getWeightedRandomSymbol(symbols: any[]): number {
+  private getWeightedRandomSymbol(symbols: SlotSymbol[]): number {
     const totalWeight = symbols.reduce((sum, s) => sum + s.weight, 0);
     let random = Math.random() * totalWeight;
 

@@ -1,3 +1,5 @@
+import type { SlotSymbol, Payline, SpinResult, SpinRequest } from '../../types';
+
 export interface SlotConfig {
   reels: number;
   rows: number;
@@ -12,4 +14,4 @@ export interface SlotSpinResult {
   totalWin: number;
 }
 
-export { SpinResult, SpinRequest, SlotSymbol, Payline } from '../types';
+export type { SlotSymbol, Payline, SpinResult, SpinRequest };
