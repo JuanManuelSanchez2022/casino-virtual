@@ -21,7 +21,7 @@ export const play = async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
-    const result = await playDice(req.userId, bet, choice);
+    const result = await playDice(req.userId, bet, choice as any);
     res.status(200).json(result);
   } catch (error: any) {
     res.status(400).json({ error: error.message });

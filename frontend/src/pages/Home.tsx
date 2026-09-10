@@ -42,7 +42,7 @@ const GAMES: Game[] = [
     id: 'dice',
     name: 'Dados',
     icon: '🎲',
-    image: '/assets/games/dice_one.png',
+    image: '/assets/games/dice.png',
     description: 'Poné a prueba tu suerte con los dados.',
     available: true,
     route: '/dice',

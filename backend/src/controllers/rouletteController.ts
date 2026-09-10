@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { playRoulette } from '../services/rouletteService';
+import { RouletteBet } from '../games/roulette/roulette.types';
 
 export const play = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -9,19 +10,14 @@ export const play = async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
-    const { type, value, amount } = req.body;
+    const { bets } = req.body as { bets: RouletteBet[] };
 
-    if (!type) {
-      res.status(400).json({ error: 'El tipo de apuesta es obligatorio.' });
+    if (!Array.isArray(bets) || bets.length === 0) {
+      res.status(400).json({ error: 'Debe enviar al menos una apuesta (array "bets").' });
       return;
     }
 
-    if (amount === undefined || amount === null) {
-      res.status(400).json({ error: 'El monto de la apuesta es obligatorio.' });
-      return;
-    }
-
-    const result = await playRoulette(req.userId, { type, value, amount });
+    const result = await playRoulette(req.userId, bets);
     res.status(200).json(result);
   } catch (error: any) {
     res.status(400).json({ error: error.message });
