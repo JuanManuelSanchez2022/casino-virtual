@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { useBlackjack } from '../hooks/useBlackjack';
 import { getCardSymbol, getCardColor, formatCardValue } from '../types/blackjack';
@@ -467,5 +468,3 @@ export default function Blackjack() {
     </div>
   );
 }
-
-import { useState } from 'react';

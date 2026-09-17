@@ -32,6 +32,8 @@ export const start = async (req: AuthRequest, res: Response): Promise<void> => {
       state: result.state,
       bet: result.bet,
       balance: result.balance,
+      result: result.result,
+      payout: result.payout,
     });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
@@ -59,9 +61,12 @@ export const hit = async (req: AuthRequest, res: Response): Promise<void> => {
       dealerCards: result.dealerCards,
       playerValue: result.playerValue,
       dealerVisibleValue: result.dealerVisibleValue,
+      dealerValue: result.dealerValue,
       state: result.state,
       bet: result.bet,
       balance: result.balance,
+      result: result.result,
+      payout: result.payout,
     });
   } catch (error: any) {
     res.status(400).json({ error: error.message });

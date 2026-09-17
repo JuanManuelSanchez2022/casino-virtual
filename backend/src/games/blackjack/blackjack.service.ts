@@ -134,6 +134,213 @@ const updateStoredGame = async (
   }
 };
 
+const processNaturalBlackjack = async (
+  tx: Prisma.TransactionClient,
+  userId: string,
+  wallet: { id: string; balance: number },
+  gameRecord: { id: string },
+  session: { id: string },
+  betAmount: number,
+  playerHand: any,
+  dealerHand: any,
+  spin: { id: string },
+  engine: BlackjackEngine
+): Promise<{
+  result: BlackjackResult;
+  payout: number;
+  finalBalance: number;
+  dealerHidden: boolean;
+}> => {
+  let result: BlackjackResult;
+  let payout = 0;
+  let finalBalance = wallet.balance - betAmount;
+  let dealerHidden = false;
+
+  if (playerHand.isBlackjack && dealerHand.isBlackjack) {
+    result = 'PUSH';
+    payout = betAmount;
+    finalBalance = wallet.balance;
+  } else if (playerHand.isBlackjack) {
+    result = 'BLACKJACK';
+    payout = Math.round(betAmount * BLACKJACK_CONFIG.blackjackPayout);
+    finalBalance = wallet.balance + payout;
+  } else {
+    result = 'LOSE';
+    payout = 0;
+    finalBalance = wallet.balance - betAmount;
+  }
+
+  if (payout > 0) {
+    await tx.wallet.update({
+      where: { userId },
+      data: {
+        balance: { increment: payout },
+        totalWon: { increment: payout },
+      },
+    });
+
+    await tx.transaction.create({
+      data: {
+        userId,
+        walletId: wallet.id,
+        type: 'WIN',
+        amount: payout,
+        balanceBefore: finalBalance - payout,
+        balanceAfter: finalBalance,
+        gameId: gameRecord.id,
+        spinId: spin.id,
+        description: result === 'BLACKJACK' ? `Blackjack natural (3:2)` : `Empate - apuesta devuelta`,
+      },
+    });
+  } else if (result === 'PUSH') {
+    await tx.wallet.update({
+      where: { userId },
+      data: {
+        balance: { increment: betAmount },
+      },
+    });
+
+    await tx.transaction.create({
+      data: {
+        userId,
+        walletId: wallet.id,
+        type: 'WIN',
+        amount: betAmount,
+        balanceBefore: wallet.balance - betAmount,
+        balanceAfter: wallet.balance,
+        gameId: gameRecord.id,
+        spinId: spin.id,
+        description: `Empate - apuesta devuelta`,
+      },
+    });
+  }
+
+  await tx.spin.update({
+    where: { id: spin.id },
+    data: {
+      win: payout,
+      winningLines: {
+        state: 'FINISHED',
+        bet: betAmount,
+        deck: [],
+        playerHand: [],
+        dealerHand: [],
+        playerValue: playerHand.value,
+        dealerValue: dealerHand.value,
+        dealerHidden: false,
+        result,
+      },
+    },
+  });
+
+  await tx.gameSession.update({
+    where: { id: session.id },
+    data: {
+      totalBet: { increment: betAmount },
+      totalWin: { increment: payout },
+      endedAt: new Date(),
+    },
+  });
+
+  return { result, payout, finalBalance, dealerHidden };
+};
+
+const processGameFinish = async (
+  tx: Prisma.TransactionClient,
+  userId: string,
+  wallet: { id: string; balance: number },
+  gameRecord: { id: string },
+  session: { id: string },
+  storedGame: StoredBlackjackState,
+  spin: { id: string },
+  playerHandCards: Card[],
+  dealerHandCards: Card[],
+  playerHand: any,
+  dealerHand: any,
+  result: BlackjackResult,
+  betAmount: number,
+  engine: BlackjackEngine
+): Promise<{ payout: number; finalBalance: number }> => {
+  const payout = engine.calculatePayout(betAmount, result);
+  let finalBalance = wallet.balance - betAmount;
+
+  if (payout > 0) {
+    const winWallet = await tx.wallet.update({
+      where: { userId },
+      data: {
+        balance: { increment: payout },
+        totalWon: { increment: payout },
+      },
+    });
+    finalBalance = winWallet.balance;
+
+    await tx.transaction.create({
+      data: {
+        userId,
+        walletId: winWallet.id,
+        type: 'WIN',
+        amount: payout,
+        balanceBefore: finalBalance - payout,
+        balanceAfter: finalBalance,
+        gameId: gameRecord.id,
+        spinId: spin.id,
+        description: result === 'BLACKJACK' ? `Blackjack (3:2)` : `Victoria en Blackjack`,
+      },
+    });
+  } else if (result === 'PUSH') {
+    await tx.wallet.update({
+      where: { userId },
+      data: {
+        balance: { increment: betAmount },
+      },
+    });
+
+    await tx.transaction.create({
+      data: {
+        userId,
+        walletId: wallet.id,
+        type: 'WIN',
+        amount: betAmount,
+        balanceBefore: wallet.balance - betAmount,
+        balanceAfter: wallet.balance,
+        gameId: gameRecord.id,
+        spinId: spin.id,
+        description: `Empate - apuesta devuelta`,
+      },
+    });
+    finalBalance = wallet.balance;
+  }
+
+  await tx.spin.update({
+    where: { id: spin.id },
+    data: {
+      win: payout,
+      winningLines: {
+        state: 'FINISHED',
+        bet: betAmount,
+        deck: cardsToJSON([]),
+        playerHand: cardsToJSON(playerHandCards),
+        dealerHand: cardsToJSON(dealerHandCards),
+        playerValue: playerHand.value,
+        dealerValue: dealerHand.value,
+        dealerHidden: false,
+        result,
+      },
+    },
+  });
+
+  await tx.gameSession.update({
+    where: { id: session.id },
+    data: {
+      totalBet: { increment: betAmount },
+      totalWin: { increment: payout },
+      endedAt: new Date(),
+    },
+  });
+
+  return { payout, finalBalance };
+};
+
 export const startBlackjack = async (
   userId: string,
   bet: BlackjackBet
@@ -146,6 +353,8 @@ export const startBlackjack = async (
   state: BlackjackGameState;
   bet: number;
   balance: number;
+  result?: BlackjackResult;
+  payout?: number;
 }> => {
   validateBet(bet);
 
@@ -189,92 +398,144 @@ export const startBlackjack = async (
 
   let state: BlackjackGameState = 'PLAYER_TURN';
   let result: BlackjackResult | undefined;
+  let payout: number | undefined;
+  let finalBalance = wallet.balance - bet.amount;
   let dealerHidden = true;
+  let sessionId: string;
 
-  if (playerHand.isBlackjack) {
-    if (dealerHand.isBlackjack) {
-      result = 'PUSH';
-      state = 'FINISHED';
-      dealerHidden = false;
-    } else {
-      result = 'BLACKJACK';
-      state = 'FINISHED';
-      dealerHidden = false;
-    }
-  } else if (dealerHand.isBlackjack) {
-    result = 'LOSE';
+  if (playerHand.isBlackjack || dealerHand.isBlackjack) {
     state = 'FINISHED';
     dealerHidden = false;
-  }
 
-  const session = await prisma.gameSession.create({
-    data: {
-      userId,
-      gameId: gameRecord.id,
-    },
-  });
-
-  const spin = await prisma.spin.create({
-    data: {
-      sessionId: session.id,
-      userId,
-      gameId: gameRecord.id,
-      bet: bet.amount,
-      win: 0,
-      symbols: {
-        playerCards: cardsToJSON(playerCards),
-        dealerCards: cardsToJSON(dealerCards),
-      },
-      winningLines: {
-        state,
-        bet: bet.amount,
-        deck: cardsToJSON(remainingDeck),
-        playerHand: cardsToJSON(playerCards),
-        dealerHand: cardsToJSON(dealerCards),
-        playerValue: playerHand.value,
-        dealerValue: dealerHand.value,
-        dealerHidden,
-        result,
-      },
-      paytableVersion: engine.getPaytableVersion(),
-    },
-  });
-
-  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    await tx.wallet.update({
-      where: { userId },
-      data: {
-        balance: { decrement: bet.amount },
-        totalLost: { increment: bet.amount },
-      },
-    });
-
-    await tx.transaction.create({
+    const session = await prisma.gameSession.create({
       data: {
         userId,
-        walletId: wallet.id,
-        type: 'BET',
-        amount: -bet.amount,
-        balanceBefore: wallet.balance,
-        balanceAfter: wallet.balance - bet.amount,
         gameId: gameRecord.id,
-        spinId: spin.id,
-        description: `Apuesta en Blackjack`,
       },
     });
-  });
+
+    sessionId = session.id;
+
+    const spin = await prisma.spin.create({
+      data: {
+        sessionId: session.id,
+        userId,
+        gameId: gameRecord.id,
+        bet: bet.amount,
+        win: 0,
+        symbols: {
+          playerCards: cardsToJSON(playerCards),
+          dealerCards: cardsToJSON(dealerCards),
+        },
+        winningLines: {
+          state: 'FINISHED',
+          bet: bet.amount,
+          deck: [],
+          playerHand: [],
+          dealerHand: [],
+          playerValue: playerHand.value,
+          dealerValue: dealerHand.value,
+          dealerHidden: false,
+          result: undefined,
+        },
+        paytableVersion: engine.getPaytableVersion(),
+      },
+    });
+
+    const processed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      return await processNaturalBlackjack(
+        tx,
+        userId,
+        wallet,
+        gameRecord,
+        session,
+        bet.amount,
+        playerHand,
+        dealerHand,
+        spin,
+        engine
+      );
+    });
+
+    result = processed.result;
+    payout = processed.payout;
+    finalBalance = processed.finalBalance;
+    dealerHidden = processed.dealerHidden;
+  } else {
+    const session = await prisma.gameSession.create({
+      data: {
+        userId,
+        gameId: gameRecord.id,
+      },
+    });
+
+    await prisma.spin.create({
+      data: {
+        sessionId: session.id,
+        userId,
+        gameId: gameRecord.id,
+        bet: bet.amount,
+        win: 0,
+        symbols: {
+          playerCards: cardsToJSON(playerCards),
+          dealerCards: cardsToJSON(dealerCards),
+        },
+        winningLines: {
+          state,
+          bet: bet.amount,
+          deck: cardsToJSON(remainingDeck),
+          playerHand: cardsToJSON(playerCards),
+          dealerHand: cardsToJSON(dealerCards),
+          playerValue: playerHand.value,
+          dealerValue: dealerHand.value,
+          dealerHidden,
+          result,
+        },
+        paytableVersion: engine.getPaytableVersion(),
+      },
+    });
+
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.wallet.update({
+        where: { userId },
+        data: {
+          balance: { decrement: bet.amount },
+          totalLost: { increment: bet.amount },
+        },
+      });
+
+      await tx.transaction.create({
+        data: {
+          userId,
+          walletId: wallet.id,
+          type: 'BET',
+          amount: -bet.amount,
+          balanceBefore: wallet.balance,
+          balanceAfter: wallet.balance - bet.amount,
+          gameId: gameRecord.id,
+          description: `Apuesta en Blackjack`,
+        },
+      });
+    });
+
+    sessionId = session.id;
+  }
 
   const dealerVisibleValue = dealerHidden ? dealerCards[0].value : dealerHand.value;
 
   return {
-    gameId: session.id,
+    gameId: sessionId,
     playerCards,
-    dealerCards: dealerHidden ? [{ ...dealerCards[0], hidden: true }, { ...dealerCards[1], hidden: true }] : dealerCards,
+    dealerCards: dealerHidden
+      ? [{ ...dealerCards[0], hidden: false }, { ...dealerCards[1], hidden: true }]
+      : dealerCards,
     playerValue: playerHand.value,
     dealerVisibleValue,
     state,
     bet: bet.amount,
-    balance: wallet.balance - bet.amount,
+    balance: finalBalance,
+    result,
+    payout,
   };
 };
 
@@ -287,9 +548,12 @@ export const hitBlackjack = async (
   dealerCards: ResponseCard[];
   playerValue: number;
   dealerVisibleValue: number;
+  dealerValue: number;
   state: BlackjackGameState;
   bet: number;
   balance: number;
+  result?: BlackjackResult;
+  payout?: number;
 }> => {
   const session = await prisma.gameSession.findUnique({
     where: { id: gameId },
@@ -336,43 +600,117 @@ export const hitBlackjack = async (
   const playerHand = engine.getHand(newPlayerCards);
 
   let state: BlackjackGameState = storedGame.state;
-  let result = storedGame.result;
+  let result: BlackjackResult | undefined = storedGame.result;
+  let payout: number | undefined;
+  let finalBalance = wallet.balance;
   let dealerHidden = storedGame.dealerHidden;
 
   if (playerHand.isBust) {
     state = 'FINISHED';
     result = 'LOSE';
+    payout = 0;
     dealerHidden = false;
+
+    const spin = await prisma.spin.findFirst({
+      where: { sessionId: gameId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (spin) {
+      const processed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        return await processGameFinish(
+          tx,
+          userId,
+          wallet,
+          gameRecord,
+          session,
+          storedGame,
+          spin,
+          newPlayerCards,
+          dealerHandCards,
+          playerHand,
+          engine.getHand(dealerHandCards),
+          'LOSE',
+          storedGame.bet,
+          engine
+        );
+      });
+      finalBalance = processed.finalBalance;
+    }
   } else if (playerHand.value === 21) {
     state = 'DEALER_TURN';
-  }
+    dealerHidden = false;
 
-  await updateStoredGame(gameId, {
-    playerHand: cardsToJSON(newPlayerCards),
-    playerValue: playerHand.value,
-    state,
-    result,
-    dealerHidden,
-    deck: cardsToJSON(remainingDeck),
-  });
+    dealerHandCards.push(engine.drawCard(remainingDeck));
+    let dealerHand = engine.getHand(dealerHandCards);
+
+    while (engine.shouldDealerHit(dealerHand)) {
+      dealerHandCards.push(engine.drawCard(remainingDeck));
+      dealerHand = engine.getHand(dealerHandCards);
+    }
+
+    const finalResult = engine.determineResult(playerHand, dealerHand);
+    result = finalResult;
+    state = 'FINISHED';
+
+    const spin = await prisma.spin.findFirst({
+      where: { sessionId: gameId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (spin) {
+      const processed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        return await processGameFinish(
+          tx,
+          userId,
+          wallet,
+          gameRecord,
+          session,
+          storedGame,
+          spin,
+          newPlayerCards,
+          dealerHandCards,
+          playerHand,
+          dealerHand,
+          finalResult,
+          storedGame.bet,
+          engine
+        );
+      });
+      payout = processed.payout;
+      finalBalance = processed.finalBalance;
+    }
+  } else {
+    state = 'PLAYER_TURN';
+    dealerHidden = true;
+    await updateStoredGame(gameId, {
+      playerHand: cardsToJSON(newPlayerCards),
+      playerValue: playerHand.value,
+      state,
+      dealerHidden,
+      deck: cardsToJSON(remainingDeck),
+    });
+  }
 
   const dealerHand = engine.getHand(dealerHandCards);
   const dealerVisibleValue = dealerHidden ? dealerHandCards[0].value : dealerHand.value;
 
-  const responsePlayerCards = newPlayerCards;
   const responseDealerCards: ResponseCard[] = dealerHidden
-    ? [{ ...dealerHandCards[0], hidden: true }, { ...dealerHandCards[1], hidden: true }]
+    ? [{ ...dealerHandCards[0], hidden: false }, { ...dealerHandCards[1], hidden: true }]
     : dealerHandCards;
 
   return {
     gameId: session.id,
-    playerCards: responsePlayerCards,
+    playerCards: newPlayerCards,
     dealerCards: responseDealerCards,
     playerValue: playerHand.value,
     dealerVisibleValue,
+    dealerValue: dealerHidden ? dealerHand.value : dealerHand.value,
     state,
     bet: storedGame.bet,
-    balance: wallet.balance,
+    balance: finalBalance,
+    result,
+    payout,
   };
 };
 
@@ -427,95 +765,58 @@ export const standBlackjack = async (
 
   const engine = new BlackjackEngine(BLACKJACK_CONFIG);
 
-  let dealerCards = jsonToCards(storedGame.dealerHand);
+  let dealerHandCards = jsonToCards(storedGame.dealerHand);
   let remainingDeck = jsonToCards(storedGame.deck);
   const playerHandCards = jsonToCards(storedGame.playerHand);
 
-  dealerCards.push(engine.drawCard(remainingDeck));
-  let dealerHand = engine.getHand(dealerCards);
+  dealerHandCards.push(engine.drawCard(remainingDeck));
+  let dealerHand = engine.getHand(dealerHandCards);
 
   while (engine.shouldDealerHit(dealerHand)) {
-    dealerCards.push(engine.drawCard(remainingDeck));
-    dealerHand = engine.getHand(dealerCards);
+    dealerHandCards.push(engine.drawCard(remainingDeck));
+    dealerHand = engine.getHand(dealerHandCards);
   }
 
   const playerHand = engine.getHand(playerHandCards);
   const result = engine.determineResult(playerHand, dealerHand);
-  const payout = engine.calculatePayout(storedGame.bet, result);
+
+  const spin = await prisma.spin.findFirst({
+    where: { sessionId: gameId },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!spin) {
+    throw new Error('No hay datos de la partida.');
+  }
 
   const record = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    let finalBalance = wallet.balance - storedGame.bet;
-
-    if (payout > 0) {
-      const winWallet = await tx.wallet.update({
-        where: { userId },
-        data: {
-          balance: { increment: payout },
-          totalWon: { increment: payout },
-        },
-      });
-      finalBalance = winWallet.balance;
-
-      await tx.transaction.create({
-        data: {
-          userId,
-          walletId: winWallet.id,
-          type: 'WIN',
-          amount: payout,
-          balanceBefore: finalBalance - payout,
-          balanceAfter: finalBalance,
-          gameId: gameRecord.id,
-          description: `Premio en Blackjack`,
-        },
-      });
-    }
-
-    const spin = await tx.spin.findFirst({
-      where: { sessionId: gameId },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (spin) {
-      await tx.spin.update({
-        where: { id: spin.id },
-        data: {
-          win: payout,
-          winningLines: {
-            state: 'FINISHED',
-            bet: storedGame.bet,
-            deck: cardsToJSON(remainingDeck),
-            playerHand: cardsToJSON(playerHandCards),
-            dealerHand: cardsToJSON(dealerCards),
-            playerValue: playerHand.value,
-            dealerValue: dealerHand.value,
-            dealerHidden: false,
-            result,
-          },
-        },
-      });
-    }
-
-    await tx.gameSession.update({
-      where: { id: gameId },
-      data: {
-        totalBet: { increment: storedGame.bet },
-        totalWin: { increment: payout },
-        endedAt: new Date(),
-      },
-    });
-
-    return { finalBalance };
+    return await processGameFinish(
+      tx,
+      userId,
+      wallet,
+      gameRecord,
+      session,
+      storedGame,
+      spin,
+      playerHandCards,
+      dealerHandCards,
+      playerHand,
+      dealerHand,
+      result,
+      storedGame.bet,
+      engine
+    );
   });
 
   return {
     gameId: session.id,
     playerCards: playerHandCards,
-    dealerCards: dealerCards,
+    dealerCards: dealerHandCards,
     playerValue: playerHand.value,
     dealerValue: dealerHand.value,
     state: 'FINISHED',
     result,
-    payout,
+    payout: record.payout,
     balance: record.finalBalance,
   };
 };
@@ -567,7 +868,7 @@ export const getBlackjackState = async (
   }
 
   const responseDealerCards: ResponseCard[] = storedGame.dealerHidden
-    ? [{ ...dealerHandCards[0], hidden: true }, { ...dealerHandCards[1], hidden: true }]
+    ? [{ ...dealerHandCards[0], hidden: false }, { ...dealerHandCards[1], hidden: true }]
     : dealerHandCards;
 
   return {

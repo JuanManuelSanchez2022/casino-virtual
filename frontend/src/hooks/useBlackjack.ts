@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { api } from '../services/api';
-import { BlackjackGameState, BlackjackGameStateResponse } from '../types/blackjack';
+import { BlackjackGameStateResponse } from '../types/blackjack';
 
 export function useBlackjack() {
   const [gameState, setGameState] = useState<BlackjackGameStateResponse | null>(null);
@@ -12,16 +12,7 @@ export function useBlackjack() {
     setError('');
 
     try {
-      const result = await api.post<{
-        gameId: string;
-        playerCards: any[];
-        dealerCards: any[];
-        playerValue: number;
-        dealerVisibleValue: number;
-        state: BlackjackGameState;
-        bet: number;
-        balance: number;
-      }>('/games/blackjack/start', { bet });
+      const result = await api.post<BlackjackGameStateResponse>('/games/blackjack/start', { amount: bet });
 
       setGameState({
         gameId: result.gameId,
@@ -29,9 +20,12 @@ export function useBlackjack() {
         dealerCards: result.dealerCards,
         playerValue: result.playerValue,
         dealerVisibleValue: result.dealerVisibleValue,
+        dealerValue: result.dealerValue,
         state: result.state,
         bet: result.bet,
         balance: result.balance,
+        result: result.result,
+        payout: result.payout,
       });
 
       return result;
@@ -50,16 +44,7 @@ export function useBlackjack() {
     setError('');
 
     try {
-      const result = await api.post<{
-        gameId: string;
-        playerCards: any[];
-        dealerCards: any[];
-        playerValue: number;
-        dealerVisibleValue: number;
-        state: string;
-        bet: number;
-        balance: number;
-      }>(`/games/blackjack/${gameState.gameId}/hit`, {});
+      const result = await api.post<BlackjackGameStateResponse>(`/games/blackjack/${gameState.gameId}/hit`, {});
 
       setGameState(prev => prev ? {
         ...prev,
@@ -67,8 +52,11 @@ export function useBlackjack() {
         dealerCards: result.dealerCards,
         playerValue: result.playerValue,
         dealerVisibleValue: result.dealerVisibleValue,
-        state: result.state as BlackjackGameState,
+        dealerValue: result.dealerValue,
+        state: result.state,
         balance: result.balance,
+        result: result.result,
+        payout: result.payout,
       } : null);
 
       return result;
@@ -87,28 +75,19 @@ export function useBlackjack() {
     setError('');
 
     try {
-      const result = await api.post<{
-        gameId: string;
-        playerCards: any[];
-        dealerCards: any[];
-        playerValue: number;
-        dealerValue: number;
-        state: string;
-        result?: string;
-        payout?: number;
-        balance: number;
-      }>(`/games/blackjack/${gameState.gameId}/stand`, {});
+      const result = await api.post<BlackjackGameStateResponse>(`/games/blackjack/${gameState.gameId}/stand`, {});
 
       setGameState({
         gameId: result.gameId,
         playerCards: result.playerCards,
         dealerCards: result.dealerCards,
         playerValue: result.playerValue,
+        dealerVisibleValue: result.dealerVisibleValue,
         dealerValue: result.dealerValue,
-        state: result.state as BlackjackGameState,
+        state: result.state,
         bet: gameState.bet,
         balance: result.balance,
-        result: result.result as any,
+        result: result.result,
         payout: result.payout,
       });
 
@@ -126,19 +105,7 @@ export function useBlackjack() {
     setError('');
 
     try {
-      const result = await api.get<{
-        gameId: string;
-        playerCards: any[];
-        dealerCards: any[];
-        playerValue: number;
-        dealerVisibleValue?: number;
-        dealerValue?: number;
-        state: string;
-        bet: number;
-        balance: number;
-        result?: string;
-        payout?: number;
-      }>(`/games/blackjack/${gameId}`);
+      const result = await api.get<BlackjackGameStateResponse>(`/games/blackjack/${gameId}`);
 
       setGameState({
         gameId: result.gameId,
@@ -147,10 +114,10 @@ export function useBlackjack() {
         playerValue: result.playerValue,
         dealerVisibleValue: result.dealerVisibleValue,
         dealerValue: result.dealerValue,
-        state: result.state as BlackjackGameState,
+        state: result.state,
         bet: result.bet,
         balance: result.balance,
-        result: result.result as any,
+        result: result.result,
         payout: result.payout,
       });
 
