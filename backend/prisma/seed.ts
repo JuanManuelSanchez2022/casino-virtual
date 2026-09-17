@@ -30,13 +30,13 @@ async function main() {
 
   const blackjackGame = await prisma.game.upsert({
     where: { slug: 'blackjack' },
-    update: {},
+    update: { isActive: true },
     create: {
       slug: 'blackjack',
       name: 'Blackjack',
-      description: 'Blackjack 21 próximamente',
+      description: 'Blackjack clásico 21. Jugá contra el dealer.',
       type: 'blackjack',
-      isActive: false,
+      isActive: true,
     },
   });
 

@@ -33,9 +33,9 @@ const GAMES: Game[] = [
     id: 'blackjack',
     name: 'Blackjack',
     icon: '🃏',
-    image: '/assets/games/blackjack.png',
-    description: 'Acercate a 21 sin pasarte.',
-    available: false,
+    image: '/assets/games/background.png',
+    description: 'Acercate a 21 sin pasarte. Jugá contra el dealer.',
+    available: true,
     route: '/blackjack',
   },
   {

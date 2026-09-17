@@ -7,6 +7,7 @@ import History from './pages/History';
 import Profile from './pages/Profile';
 import Dice from './pages/Dice';
 import Roulette from './pages/Roulette';
+import Blackjack from './pages/Blackjack';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
               <Route path="/slots" element={<Slots />} />
               <Route path="/dice" element={<Dice />} />
               <Route path="/roulette" element={<Roulette />} />
+              <Route path="/blackjack" element={<Blackjack />} />
               <Route path="/history" element={<History />} />
               <Route path="/profile" element={<Profile />} />
             </Routes>
